@@ -1,17 +1,9 @@
 import torch
 import os
-import multiprocessing as mp
 
 from .server import ModelProcess, ProcessChannel
 from .client import *
 from ..generator import Generator
-
-# # Ensure CUDA-safe multiprocessing semantics
-# try:
-#     mp.set_start_method("spawn", force=True)
-# except RuntimeError:
-#     # Start method may already be set by the runtime; that's fine
-#     pass
 
 class ModelManager:
     def __init__(self, device='cuda', port=8000, local=False):

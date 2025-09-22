@@ -3,8 +3,6 @@ python odm.py --head_less \
 --skip_avatar_animation \
 --output_dir output/odm \
 --scene NY \
---no_load_indoor_scene \
---no_load_scene \
 --resolution 512 \
 --num_agents 15 \
 --config agents_num_15_with_schedules \

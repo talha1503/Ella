@@ -1,0 +1,12 @@
+python ControlledFinals/LeadershipQuest.py --head_less \
+--multi_process \
+--skip_avatar_animation \
+--output_dir output/CF/LQ \
+--scene NY \
+--outdoor_objects_max_num 2 \
+--resolution 512 \
+--num_agents 15 \
+--config agents_num_15 \
+--agent_type generative_agent \
+--max_seconds 10800 \
+--save_per_seconds 10

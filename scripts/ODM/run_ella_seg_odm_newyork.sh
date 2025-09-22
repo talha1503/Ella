@@ -1,17 +1,14 @@
 python ViCo/env.py --head_less \
---backend gpu \
 --multi_process \
 --skip_avatar_animation \
+--enable_gt_segmentation \
 --output_dir output/odm \
---scene LONDON \
---enable_indoor_scene \
---enable_indoor_activities \
---enable_outdoor_objects \
+--scene NY \
 --outdoor_objects_max_num 2 \
 --resolution 512 \
 --num_agents 15 \
 --config agents_num_15 \
---agent_type ella \
+--agent_type ella_seg \
 --max_seconds 32400 \
 --save_per_seconds 10 \
 --lm_id gpt-4o

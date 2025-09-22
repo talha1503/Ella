@@ -15,7 +15,8 @@ if __name__ == "__main__":
     clip_model = CLIPWrapper()
     character_name_to_skin_info = json.load(open(f"vico/assets/character2skin.json", 'r'))
     character_name_to_image_features = {}
-    character_name_to_image_features_single = {}
+    if os.path.exists("vico/assets/character_name_to_image_features.pkl"):
+        character_name_to_image_features = pickle.load(open("vico/assets/character_name_to_image_features.pkl", "rb"))
     for char_name, skin_dict in tqdm(character_name_to_skin_info.items(), desc="Processing characters"):
         rgbs = []
         for idx in range(4):

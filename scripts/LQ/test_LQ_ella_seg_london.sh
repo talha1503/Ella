@@ -1,0 +1,14 @@
+python ControlledFinals/LeadershipQuest.py --head_less \
+--multi_process \
+--skip_avatar_animation \
+--enable_gt_segmentation \
+--output_dir output/CF/LQ \
+--scene LONDON \
+--outdoor_objects_max_num 2 \
+--resolution 512 \
+--num_agents 15 \
+--config agents_num_15 \
+--agent_type ella_seg \
+--max_seconds 10800 \
+--save_per_seconds 10 \
+--lm_id gpt-4o

@@ -1,0 +1,12 @@
+python odm.py --head_less \
+--multi_process \
+--skip_avatar_animation \
+--output_dir output/odm \
+--scene LONDON \
+--resolution 512 \
+--num_agents 15 \
+--config agents_num_15_with_schedules \
+--agent_type ella \
+--max_seconds 32400 \
+--save_per_seconds 10 \
+--lm_id gpt-4o

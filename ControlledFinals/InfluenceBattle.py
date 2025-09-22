@@ -1,15 +1,23 @@
-import os
-import sys
-import time
-import shutil, errno
 import argparse
-import genesis as gs
 import json
+import os
+import random
+import shutil, errno
+import sys
+from datetime import datetime, timedelta
 
+import genesis as gs
+
+# Set up the current directory
 current_directory = os.getcwd()
 sys.path.insert(0, current_directory)
+
 from vico.env import VicoEnv
-from vico.tools.utils import atomic_save, json_converter
+from vico.modules import *
+
+def evaluate(data_dir):
+	from evaluate import evaluate_IB
+	evaluate_IB(data_dir)
 
 
 if __name__ == '__main__':
@@ -66,38 +74,65 @@ if __name__ == '__main__':
 
 	args = parser.parse_args()
 
+	# Set up environment
 	args.output_dir = os.path.join(args.output_dir, f"{args.scene}_{args.config}", f"{args.agent_type}")
-
 	if args.overwrite and os.path.exists(args.output_dir):
-		print(f"Overwrite the output directory: {args.output_dir}")
+		print(f"Overwriting output directory: {args.output_dir}")
 		shutil.rmtree(args.output_dir)
 	os.makedirs(args.output_dir, exist_ok=True)
+
 	config_path = os.path.join(args.output_dir, 'curr_sim')
+	continued = False
 	if not os.path.exists(config_path):
 		seed_config_path = os.path.join('vico/assets/scenes', args.scene, args.config)
-		print(f"Initiate new simulation from config: {seed_config_path}")
+		print(f"Initializing new simulation from config: {seed_config_path}")
 		try:
 			shutil.copytree(seed_config_path, config_path)
-		except OSError as exc:
+		except OSError as exc:  # python >2.5
 			if exc.errno in (errno.ENOTDIR, errno.EINVAL):
 				shutil.copy(seed_config_path, config_path)
 			else:
 				raise
 	else:
-		print(f"Continue simulation from config: {config_path}")
-
+		continued = True
+		print(f"Continuing simulation from config: {config_path}")
+		
+	# Load configuration
 	config = json.load(open(os.path.join(config_path, 'config.json'), 'r'))
-	if args.debug:
-		args.enable_third_person_cameras = True
-		if args.curr_time is not None:
-			config['curr_time'] = args.curr_time
-			atomic_save(os.path.join(config_path, 'config.json'), json.dumps(config, indent=4, default=json_converter))
+	if "party_organizer_groups" in config:
+		continued = True
+		print(f"Continuing Controlled Finals Influence Battle simulation from config: {config_path}")
+	else:
+		continued = False
+		print(f"Initializing new Controlled Finals Influence Battle simulation from config: {config_path}, setting up party organizer groups...")
+		start_date = datetime.strptime(config['start_time'], "%B %d, %Y, %H:%M:%S").date()
+		curr_date = start_date + timedelta(days=1)
+		if args.curr_time is None:
+			args.curr_time = "09:00:00"
+		config['curr_time'] = f"{curr_date.strftime('%B %d, %Y')}, {args.curr_time}"
+		random.seed(args.seed)
+		party_organizer_groups_name = random.sample(list(config['groups'].keys()), 2)
 
-	os.makedirs(os.path.join(args.output_dir, 'logs'), exist_ok=True)
+		config['party_organizer_groups'] = party_organizer_groups_name
+		with open(os.path.join(config_path, 'config.json'), 'w') as file:
+			json.dump(config, file, indent=4, default=json_converter)
+
+		# set daily requirements
+		for agent_name in config["agent_names"]:
+			agent_scratch_path = os.path.join(config_path, agent_name, "scratch.json")
+			agent_scratch = json.load(open(agent_scratch_path, 'r'))
+			if agent_scratch['groups'][0]['name'] in party_organizer_groups_name:
+				agent_scratch["daily_requirement"] = f"My group {agent_scratch['groups'][0]['name']} is organizing a party at {agent_scratch['groups'][0]['place']} from 14:30:00 to 15:00:00 today. I need to go around the city, find and invite people outside of my group to attend our party today."
+				agent_scratch["currently"] = agent_scratch["daily_requirement"]
+				with open(agent_scratch_path, 'w') as file:
+					json.dump(agent_scratch, file, indent=4, default=json_converter)
+
+	os.makedirs(os.path.join(args.output_dir, "logs"), exist_ok=True)
 
 	from tools.model_manager import global_model_manager
 	global_model_manager.init(local=True)
 
+	# Initialize environment
 	env = VicoEnv(
 		seed=args.seed,
 		precision=args.precision,
@@ -105,7 +140,7 @@ if __name__ == '__main__':
 		backend= gs.cpu if args.backend == 'cpu' else gs.gpu,
 		head_less=args.head_less,
 		resolution=args.resolution,
-		challenge=args.challenge,
+		challenge="influence_battle",
 		num_agents=args.num_agents,
 		config_path=config_path,
 		scene=args.scene,
@@ -130,26 +165,34 @@ if __name__ == '__main__':
 		debug=args.debug,
 		batch_renderer=args.batch_renderer,
 	)
-	from agents import AgentProcess, get_agent_cls_ella
+
 	agents = []
+	
+	from agents import get_agent_cls_ella, AgentProcess
 	for i in range(args.num_agents):
 		basic_kwargs = dict(
 			name = env.agent_names[i],
 			pose = env.config["agent_poses"][i],
 			info = env.agent_infos[i],
 			sim_path = config_path,
+			no_react = False,
 			debug = args.debug,
 			logging_level = args.logging_level,
-			multi_process = args.multi_process
+			multi_process = args.multi_process,
+		)
+		llm_kwargs = dict(
+			lm_source=args.lm_source,
+			lm_id=args.lm_id
 		)
 		agent_cls = get_agent_cls_ella(agent_type=args.agent_type)
-		agents.append(AgentProcess(agent_cls, **basic_kwargs))
+		agents.append(AgentProcess(agent_cls, **basic_kwargs, **llm_kwargs))
 
 	if args.multi_process:
 		gs.logger.info("Start agent processes")
 		for agent in agents:
 			agent.start()
 		gs.logger.info("Agent processes started")
+
 
 	# Simulation loop
 	obs = env.reset()
@@ -160,17 +203,14 @@ if __name__ == '__main__':
 	while True:
 		lst_time = time.perf_counter()
 		for i, agent in enumerate(agents):
-			if i in agent_list_to_update:
-				agent.update(obs[i])
+			agent.update(obs[i])
 		for i, agent in enumerate(agents):
-			if i in agent_list_to_update:
-				agent_actions[i] = agent.act()
-				agent_actions_to_print[agent.name] = agent_actions[i]['type'] if agent_actions[i] is not None else None
-				if agent_actions[i] is not None and agent_actions[i]['type'] == 'converse':
-					agent_actions[i]['request_chat_func'] = agent.request_chat
-					agent_actions[i]['get_utterance_func'] = agent.get_utterance
+			agent_actions[i] = agent.act()
+			agent_actions_to_print[agent.name] = agent_actions[i]['type'] if agent_actions[i] is not None else None
+			if agent_actions[i] is not None and agent_actions[i]['type'] == 'converse':
+				agent_actions[i]['request_chat_func'] = agent.request_chat
+				agent_actions[i]['get_utterance_func'] = agent.get_utterance
 		agent_actions['agent_list_to_update'] = agent_list_to_update
-
 		gs.logger.info(f"current time: {env.curr_time}, ViCo steps: {env.steps}, agents actions: {agent_actions_to_print}")
 		sps_agent = time.perf_counter() - lst_time
 		env.config["sps_agent"] = (env.config["sps_agent"] * env.steps + sps_agent) / (env.steps + 1)
@@ -186,6 +226,8 @@ if __name__ == '__main__':
 		if env.steps > args.max_steps:
 			break
 
+	evaluate(args.output_dir)
+	
 	for agent in agents:
 		agent.close()
 	env.close()
