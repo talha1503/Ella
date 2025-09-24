@@ -53,3 +53,6 @@ If you find our work useful, please consider citing:
   year={2025}
 }
 ```
+
+## Acknowledgement
+We would like to acknowledge the Generative Agents codebase (https://github.com/joonspk-research/generative_agents) by Joon Sung Park and collaborators, which provided a foundational framework that greatly supported our work.
