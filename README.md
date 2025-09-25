@@ -2,7 +2,7 @@
 
 This repo contains codes for the following paper:
 
-_Hongxin Zhang*, Zheyuan Zhang*, Zeyuan Wang*, Zunzhe Zhang, Lixing Fang, Qinhong Zhou, Chuang Gan_: Ella: Embodied Social Agents with Lifelong Memory
+_Hongxin Zhang*, Zheyuan Zhang*, Zeyuan Wang*, Zunzhe Zhang, Lixing Fang, Qinhong Zhou, Chuang Gan_: Ella: Embodied Lifelong Learning Agents with Non-Parametric Memory
 
 Paper: [Arxiv](https://arxiv.org/abs/2506.24019)
 
