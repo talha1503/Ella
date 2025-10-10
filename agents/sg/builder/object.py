@@ -129,6 +129,7 @@ class ObjectBuilder:
         self.conf = conf
         self.debug = conf.debug
         self.output_path = conf.output_path
+        os.makedirs(self.output_path, exist_ok=True)
         os.makedirs(os.path.join(self.output_path, "debug"), exist_ok=True)
         self.logger = conf.logger
         self.ram: RAMWrapper = global_model_manager.get_model("ram")
@@ -558,32 +559,22 @@ class ObjectBuilder:
                 curr_objects.append(self.objects[idx])
         return curr_objects
     
-    def save(self, path: str):
+    def save(self):
         for obj in self.objects.values():
             obj.save(os.path.join(self.output_path, f"obj_{obj.idx:06d}"))
-        atomic_save(path, pickle.dumps(self.objects))
+        atomic_save(os.path.join(self.output_path, "objects.pkl"), pickle.dumps(self.objects))
     
-    def load(self, path: str):
+    def load(self):
+        path = os.path.join(self.output_path, "objects.pkl")
         if os.path.exists(path):
             with open(path, 'rb') as f:
                 self.objects = pickle.load(f)
         # import pdb; pdb.set_trace()
         for obj in self.objects.values():
             self.num_frames = max(self.num_frames, obj.created_frame)
-            obj.load(os.path.join(os.path.dirname(path), f"obj_{obj.idx:06d}"))
+            obj.load(os.path.join(self.output_path, f"obj_{obj.idx:06d}"))
     
     def visualize(self):
         self.logger.info(f"Number of objects: {len(self.objects)}")
         for obj in self.objects.values():
             obj.visualize()
-
-if __name__ == "__main__":
-    logger = logging.Logger("ObjectBuilder")
-    logger.setLevel(logging.DEBUG)
-    logger.addHandler(logging.StreamHandler())
-    ob = ObjectBuilder(ObjectBuilderConfig(debug=True, logger=logger))
-    ob.load("output/object/objects.pkl")
-    # import pdb; pdb.set_trace()
-    print([obj.idx for obj in ob.objects.values()])
-    print(ob._compute_sim(ob.objects[1], [ob.objects[3]]))
-

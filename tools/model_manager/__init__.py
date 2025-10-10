@@ -8,11 +8,14 @@ from ..generator import Generator
 class ModelManager:
     def __init__(self, device='cuda', port=8000, local=False):
         self.models = {}
+        self._channel = None
+        self._processes = []
         self.init(device, port, local)
 
     def init(self, device='cuda', port=8000, local=False):
         self.device = device
         channel = None
+        processes = []
         if local:
             channel = ProcessChannel()
             if "CUDA_VISIBLE_DEVICES" in os.environ:
@@ -29,6 +32,7 @@ class ModelManager:
             else:
                 process = ModelProcess(channel, cuda_devices=[cuda_devices[0]], model_subset=["ram", "dino", "sam", "clip", "embedding"])
             process.start()
+            processes.append(process)
             
             # for llms
             if dc >= 6:
@@ -38,6 +42,7 @@ class ModelManager:
             else:
                 process = ModelProcess(channel, cuda_devices=[cuda_devices[0]], model_subset=["completion"])
             process.start()
+            processes.append(process)
         
         self.models = {
             "ram": RAMClient(device, port, channel),
@@ -47,16 +52,42 @@ class ModelManager:
             "embedding": EmbedClient(device, port, channel),
             "completion": CompletionClient(device, port, channel),
         }
+        self._channel = channel
+        self._processes = processes
     
     def get_model(self, model_name):
         if model_name not in self.models:
-                raise ValueError(f"unknown model: {model_name}")
+            raise ValueError(f"unknown model: {model_name}")
         return self.models[model_name]
 
     def get_generator(self, lm_source, lm_id, max_tokens=4096, temperature=0, top_p=1, logger=None):
         if lm_id not in self.models:
             self.models[lm_id] = Generator(lm_source, lm_id, max_tokens, temperature, top_p, logger)
         return self.models[lm_id]
+
+    def close(self):
+        # terminate any locally spawned model processes and cleanup channel
+        try:
+            for p in getattr(self, "_processes", []) or []:
+                try:
+                    if p.is_alive():
+                        p.terminate()
+                except Exception:
+                    pass
+            for p in getattr(self, "_processes", []) or []:
+                try:
+                    p.join(timeout=5)
+                except Exception:
+                    pass
+        finally:
+            self._processes = []
+        if getattr(self, "_channel", None) is not None:
+            try:
+                if hasattr(self._channel, "shutdown"):
+                    self._channel.shutdown()
+            finally:
+                self._channel = None
+        self.models = {}
 
 global_model_manager = ModelManager(local=False)
 
