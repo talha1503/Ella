@@ -24,10 +24,10 @@ Current Situation:
 
 $Context$
 
-Note: There are four types of options: continue doing current activity, engage in a conversation, adjust the schedule or buy a good. Please help me choose the best option based on my situation. Please take out the impact of the poor visual quality of the observations, which is due to rendering issues. Focus on the more important cognitive processes. Output a JSON object with the following format:
+Note: There are four types of options: `continue doing current activity`, `engage in a conversation`, `adjust the schedule` or `interact with the environment`. Please help me choose the best option based on my situation. Please take out the impact of the poor visual quality of the observations, which is due to rendering issues. Focus on the more important cognitive processes. Output a JSON object with the following format:
 
 {
     "option": "name of the option",
-    "target": "For 'engage in a conversation,' include the person's full name if known. For 'buy a good,' include the item's name only, no quantities. Otherwise, set to null.",
+    "target": "For `engage in a conversation`, include the person's full name if known. For `interaction with the environment` include the action name and object name in the format of {'action': 'action name, select from [`pick`, `put`]', 'object': 'object name in the memory'}. Otherwise, set to null.",
     "reason": "Explain why this option is the best choice given the context."
 }

@@ -74,8 +74,8 @@ class EllaAgent(Agent):
 		self.chatting_buffer: list[Chat] = [Chat(datetime.strptime(chat["time"], "%B %d, %Y, %H:%M:%S"), chat["subject"], chat["pos"], chat["content"]) for chat in chatting_buffer]
 		self.react_mode = None
 		self.last_action = None
-		self.last_adjust_schedule_time = self.e_mem.retrieve_memory_by_keyword("schedule")
-		self.last_adjust_schedule_time = datetime.strptime(self.last_adjust_schedule_time[-1]["event_time"], "%B %d, %Y, %H:%M:%S") if self.last_adjust_schedule_time is not None else None
+		adjust_schedule_events = self.e_mem.retrieve_memory_by_keyword("schedule")
+		self.last_adjust_schedule_time = datetime.strptime(adjust_schedule_events[-1]["event_time"], "%B %d, %Y, %H:%M:%S") if adjust_schedule_events is not None else None
 
 	def reset(self, name, pose):
 		super().reset(name, pose)
@@ -234,24 +234,28 @@ class EllaAgent(Agent):
 				action = self.conversation(react_target)
 			elif self.react_mode == "adjust the schedule":
 				action = self.adjust_schedule(react_reason)
-			elif self.react_mode == "buy a good":
-				if react_target is not None:
+			elif self.react_mode == "interact with the environment":
+				obj_name = react_target["object"]
+				obj_pos = self.s_mem.get_position_from_name(obj_name)
+				if obj_pos is None:
+					self.logger.warning(f"No position found for {obj_name} when interacting with the environment. Fall back to no react.")
+				else:
 					if self.held_objects[0] is None:
 						action = {
 							'type': 'pick',
 							'arg1': 0,
-							'arg2': react_target
+							'arg2': obj_pos
 						}
-						self.e_mem.add_memory("action", self.curr_time, self.pose[:3], self.current_place, ['pick', react_target], None, f"Pick up {react_target} at {self.current_place}.", None)
+						self.e_mem.add_memory("action", self.curr_time, self.pose[:3], self.current_place, ['pick', obj_name], None, f"Pick up {obj_name} at {self.current_place}.", None)
 					elif self.held_objects[1] is None:
 						action = {
 							'type': 'pick',
 							'arg1': 1,
-							'arg2': react_target
+							'arg2': obj_pos
 						}
-						self.e_mem.add_memory("action", self.curr_time, self.pose[:3], self.current_place, ['pick', react_target], None, f"Pick up {react_target} at {self.current_place}.", None)
+						self.e_mem.add_memory("action", self.curr_time, self.pose[:3], self.current_place, ['pick', obj_name], None, f"Pick up {obj_name} at {self.current_place}.", None)
 					else:
-						self.logger.warning(f"I already held two objects {self.held_objects}, cannot pick up {react_target}.")
+						self.logger.warning(f"I already held two objects {self.held_objects}, cannot pick up {obj_name}.")
 			else:
 				pass
 		elif self.hourly_schedule[self.curr_schedule_idx]["place"] is not None and self.hourly_schedule[self.curr_schedule_idx]["building"] != "open space" and self.hourly_schedule[self.curr_schedule_idx]["place"] != self.current_place:
@@ -266,7 +270,7 @@ class EllaAgent(Agent):
 			if self.commute_plan is None:
 				self.commute_plan = self.generate_commute_plan()
 				self.commute_plan_idx = 0
-			action =  self.commute()
+			action = self.commute()
 		else:
 			if self.current_place == self.scratch["groups"][0]["place"]:
 				if self.held_objects[0] is not None:
@@ -871,10 +875,11 @@ class EllaAgent(Agent):
 			react_target = react_mode_dict["target"]
 			react_reason = react_mode_dict["reason"]
 			self.logger.debug(f"React mode reason: {react_reason}")
-			if react_mode not in ["continue doing current activity", "engage in a conversation", "adjust the schedule", "buy a good"]:
+			if react_mode not in ["continue doing current activity", "engage in a conversation", "adjust the schedule", "interact with the environment"]:
 				raise ValueError(f"Invalid react mode: {react_mode}. Use default react mode of continue doing current activity.")
-			if react_mode == "buy a good" and react_target is None:
-				raise ValueError(f"Invalid react target: {react_target} for buy a good. Use default react mode of continue doing current activity.")
+			if react_mode == "interact with the environment":
+				if react_target is None or react_target["action"] != "pick" or react_target["object"] is None:
+					raise ValueError(f"Invalid react target: {react_target} for interact with the environment. Use default react mode of continue doing current activity.")
 		except Exception as e:
 			self.logger.error(f"Error determining react mode: {e}. The response was {response}. Use default react mode of continue doing current activity.")
 			react_mode = "continue doing current activity"
@@ -1141,7 +1146,10 @@ class EllaAgent(Agent):
 			return 0
 		for i, schedule in enumerate(self.hourly_schedule):
 			if datetime.strptime(schedule["start_time"], "%H:%M:%S").time() <= self.curr_time.time() <= datetime.strptime(schedule["end_time"], "%H:%M:%S").time():
-				return i
+				if schedule["type"] == "commute" and schedule["end_place"] == self.current_place:
+					return i + 1
+				else:
+					return i
 		self.logger.error(f"Error finding current schedule index for {self.name} at {self.curr_time}. The hourly schedule is {self.hourly_schedule}.")
 		return 0
 

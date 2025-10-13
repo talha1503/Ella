@@ -44,7 +44,6 @@ class SemanticMemory:
 
 		if self.detect_interval != -1:
 			from .sg.builder.object import ObjectBuilder, ObjectBuilderConfig, AGENT_TAGS, VEHICLE_TAGS
-			os.makedirs(os.path.join(storage_path, "object"), exist_ok=True)
 			self.object_builder = ObjectBuilder(ObjectBuilderConfig(
 				debug=self.debug, output_path=os.path.join(storage_path, "object"), logger=self.logger))
 			if region_layer:
@@ -163,10 +162,10 @@ class SemanticMemory:
 		else:
 			self.knowledge_feature = pickle.load(open(os.path.join(os.path.dirname(self.storage_path), 'seed_knowledge_feature.pkl'), 'rb'))
 		if self.object_builder is not None:
-			self.object_builder.load(os.path.join(self.storage_path, "object", "objects.pkl"))
+			self.object_builder.load()
 			self.object_builder.num_frames = self.num_frames
 		if self.region_builder is not None:
-			self.region_builder.load(f"{self.storage_path}/region.json")
+			self.region_builder.load(os.path.join(self.region_builder.output_path, "region.json"))
 		# scene graph memory is loaded in get_sg when needed
 
 	def save_memory(self):
@@ -174,11 +173,11 @@ class SemanticMemory:
 			with self.saving_lock:
 				atomic_save(self.knowledge_path, json.dumps(self.knowledge, indent=2, default=json_converter))
 				atomic_save(self.knowledge_feature_path, pickle.dumps(self.knowledge_feature))
-				# if self.object_builder is not None:
-				# 	self.object_builder.save(os.path.join(self.storage_path, "object", "objects.pkl"))
-				self.scene_graph_dict[self.current_place].volume_grid_builder.save(f"{self.storage_path}/{self.current_place}/volume_grid.pkl")
+				if self.object_builder is not None:
+					self.object_builder.save()
+				self.scene_graph_dict[self.current_place].volume_grid_builder.save(os.path.join(self.storage_path, self.current_place, "volume_grid.pkl"))
 				if self.region_builder is not None:
-					self.region_builder.save(f"{self.storage_path}/region.json")
+					self.region_builder.save(os.path.join(self.region_builder.output_path, "region.json"))
 		
 		Thread(target=_save, daemon=True).start()
 
@@ -493,29 +492,16 @@ class EpisodicMemory:
 
 		return importance_out
 
-	def extract_recency(self, events):
+	def extract_recency(self):
 		recency_decay = 0.995
+		events = [[event.event_last_access_time, event] for event in self.experience]
+		events = sorted(events, key=lambda x: x[0])
+		events = [event for _, event in events]
 		recency_vals = [recency_decay ** i for i in range(1, len(events) + 1)]
 		recency_out = dict()
 		for i, event in enumerate(events):
 			recency_out[event.event_id] = recency_vals[i]
 		return recency_out
-	
-	# def extract_text_relevance(self, events, focal_point_embedding: np.ndarray):
-	# 	relevance_out = dict()
-	# 	for i, event in enumerate(events):
-	# 		event_text_ft = event.event_text_ft
-	# 		if event_text_ft is not None:
-	# 			relevance_out[event.event_id] = self.cos_sim(event_text_ft, focal_point_embedding)
-	# 	return relevance_out
-	#
-	# def extract_img_relevance(self, events, focal_point_embedding: np.ndarray) -> dict[str, float]:
-	# 	relevance_out = dict()
-	# 	for i, event in enumerate(events):
-	# 		event_img_ft = event.event_img_ft
-	# 		if event_img_ft is not None:
-	# 			relevance_out[event.event_id] = self.cos_sim(event_img_ft, focal_point_embedding)
-	# 	return relevance_out
 	#
 	def new_retrieve(self, curr_time, focal_points, focal_points_embedding, num_events):
 		# num_events for each focal point in focal_points
@@ -562,19 +548,15 @@ class EpisodicMemory:
 		relevance_w = 0.6
 		proximity_w = 0.3
 
-		events = [[event.event_last_access_time, event] for event in self.experience]
-		events = sorted(events, key=lambda x: x[0])
-		events = [event for _, event in events]
-
-		recency_out = self.extract_recency(events)
+		recency_out = self.extract_recency()
 		recency_out = min_max_normalize_dict(recency_out)
 
 		proximity_out = dict()
-		for i, event in enumerate(events):
-			proximity_out[event.event_id] = 1 / (np.linalg.norm(np.array(event.event_position) - np.array(pos)) + 1e-6)
+		for event in self.experience:
+			proximity_out[event.event_id] = 1 / (np.linalg.norm(np.array(event.event_position) - np.array(pos)) + 1)
 		proximity_out = min_max_normalize_dict(proximity_out)
 
-		D_text, I_text = self.text_index.search(np.array(self.embedding_generator.get_embedding(query)).reshape(1, -1), min(k * 2, self.text_index.ntotal))
+		D_text, I_text = self.text_index.search(np.array(self.embedding_generator.get_embedding(query)).reshape(1, -1), self.text_index.ntotal)
 
 		if img is not None:
 			D_img, I_img = self.img_index.search(np.array(self.clip.predict_image(img)).reshape(1, -1), min(k * 2, self.img_index.ntotal))
@@ -597,24 +579,6 @@ class EpisodicMemory:
 		for idx, score in scores.items():
 			idx = str(idx)
 			master_out[idx] = recency_w * recency_out[idx] + relevance_w * score + proximity_w * proximity_out[idx]
-
-		# text_relevance_out = self.extract_text_relevance(events, self.embedding_generator.get_embedding(query))
-		# text_relevance_out = min_max_normalize_dict(text_relevance_out)
-
-		# if img is not None:
-		# 	img_relevance_out = self.extract_img_relevance(events, self.clip.predict_image(img))
-		# 	img_relevance_out = min_max_normalize_dict(img_relevance_out)
-		# else:
-		# 	img_relevance_out = dict()
-
-		# for key in recency_out.keys():
-		# 	if key in img_relevance_out:
-		# 		relevance_out = 0.5 * (img_relevance_out[key] + text_relevance_out[key])
-		# 	else:
-		# 		relevance_out = text_relevance_out[key]
-		# 	master_out[key] = (recency_w * recency_out[key]
-		# 					+ relevance_w * relevance_out
-		# 					+ proximity_w * proximity_out[key])
 
 		master_out = top_highest_x_values(master_out, k)
 		master_events_indexes = [int(key) for key in list(master_out.keys())]
@@ -650,6 +614,9 @@ class EpisodicMemory:
 				retrieved_experience.append(experience.tojson())
 			else:
 				break
+		if len(retrieved_experience) > 3:
+			self.logger.warning(f"Retrieved {len(retrieved_experience)} latest events, which is not normal. Return the latest 3 events.")
+			retrieved_experience = retrieved_experience[-3:]
 		return retrieved_experience
 
 	def retrieve_memory_by_time(self, time):

@@ -38,6 +38,7 @@ class ModelServerHandler(BaseHTTPRequestHandler):
 class ProcessChannel:
     UNBATCHED = ["/sam", "/clip/image"]
     def __init__(self):
+        self._manager = mp.Manager()
         self.input = {
             "/ram": mp.Queue(),
             "/dino": mp.Queue(),
@@ -47,7 +48,7 @@ class ProcessChannel:
             "/embedding": mp.Queue(),
             "/completion": mp.Queue(),
         }
-        self.output = mp.Manager().dict()
+        self.output = self._manager.dict()
         self.cond_c = mp.Condition()
         self.cond_s = mp.Condition()
     
@@ -83,6 +84,26 @@ class ProcessChannel:
             while id not in self.output:
                 self.cond_c.wait()
             return self.output.pop(id)
+
+    def shutdown(self):
+        # best-effort cleanup of queues and manager resources
+        try:
+            for q in self.input.values():
+                try:
+                    q.close()
+                except Exception:
+                    pass
+                try:
+                    q.join_thread()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        try:
+            if self._manager is not None:
+                self._manager.shutdown()
+        except Exception:
+            pass
 
 class ModelProcess(mp.Process):
     def __init__(self, channel: ProcessChannel, cuda_devices=[0], model_subset: list=None):
