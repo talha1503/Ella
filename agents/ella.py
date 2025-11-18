@@ -10,6 +10,9 @@ from datetime import datetime, timedelta
 from PIL import Image
 from dataclasses import dataclass
 from .memory import SemanticMemory, EpisodicMemory
+from .sg.builder.object import AGENT_TAGS
+import pdb 
+import pickle 
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from vico.agents import Agent
@@ -69,7 +72,7 @@ class EllaAgent(Agent):
 			self.last_react_time = lastevent.event_time
 		else:
 			self.last_react_time = None
-
+	
 		chatting_buffer = self.scratch["chatting_buffer"] if "chatting_buffer" in self.scratch else []
 		self.chatting_buffer: list[Chat] = [Chat(datetime.strptime(chat["time"], "%B %d, %Y, %H:%M:%S"), chat["subject"], chat["pos"], chat["content"]) for chat in chatting_buffer]
 		self.react_mode = None
@@ -179,7 +182,6 @@ class EllaAgent(Agent):
 
 		if not self.no_react and (self.last_react_time is None or (self.last_react_time != self.curr_time and (self.curr_time - self.last_react_time).total_seconds() > self.react_freq)):
 			if obs['rgb'] is not None:
-
 				# todo: get the keywords
 				donot_add = False
 
@@ -304,6 +306,151 @@ class EllaAgent(Agent):
 			action = {"type": "wait", "arg1": None}
 		self.last_action = action
 		return action
+
+	def diagnose(self, text_prompt: str, rgb, depth, extrinsics, **kwargs) -> str:
+		fov = extrinsics.get("fov", 60.0) if isinstance(extrinsics, dict) else 60.0
+		cam_ext = extrinsics.get("extrinsics", None) if isinstance(extrinsics, dict) else extrinsics
+		current_place = extrinsics.get("current_place", self.current_place or "open space") if isinstance(extrinsics, dict) else (self.current_place or "open space")
+
+		labels, cur_objs = self.s_mem.object_builder.add_frame_for_cur_objects(
+			rgb=rgb, depth=depth, fov=fov, camera_ext=cam_ext
+		)
+
+		def infer_type(mem: dict):
+			for k in ("type", "coarse_type", "category"):
+				if k in mem and isinstance(mem[k], str):
+					return mem[k].lower()
+			n = (mem.get("name") or "").lower()
+			if "agent" in n or mem.get("age") or mem.get("gender"):
+				return "agent"
+			if mem.get("building") or mem.get("coarse_type") in ("office","food","stores","entertainment"):
+				return "building"
+			return "object"
+
+		if kwargs.get("external_run"):
+			external_run_path = kwargs["external_run"]
+			self.s_mem.knowledge_feature = pickle.load(open(os.path.join(external_run_path, "ella", "curr_sim", kwargs['agent_name'], "semantic_memory", "knowledge_feature.pkl"),"rb"))
+		else:
+			knowledge_features = self.s_mem.knowledge_feature
+		
+		gallery = []
+		for name, ft in knowledge_features.items():
+			if ft is None: 
+				continue
+			mem = self.s_mem.knowledge.get(name, {}) or {}
+			typ = infer_type({**mem, "name": name})
+			try:
+				vec = np.asarray(ft, dtype=np.float32)
+				if vec.ndim > 1:
+					vec = vec.squeeze()
+				if np.linalg.norm(vec) == 0:
+					continue
+			except Exception:
+				continue
+			gallery.append({
+				"name": name,
+				"ft": vec / (np.linalg.norm(vec) + 1e-8),
+				"typ": typ,
+				"mem": mem
+			})
+
+		def rank_by_cosine(query_vec, candidates):
+			q = np.asarray(query_vec, np.float32)
+			qn = q / (np.linalg.norm(q) + 1e-8)
+			sims = [(cand, float(np.dot(qn, cand["ft"]))) for cand in candidates]
+			sims.sort(key=lambda x: x[1], reverse=True)
+			return sims
+
+		TAU_HI = {"agent": 0.7, "building": 0.80, "object": 0.75}
+		TAU_LO = {"agent": 0.5, "building": 0.72, "object": 0.67}
+	
+		from .sg.builder.object import AGENT_TAGS
+		def tag_to_type(tag):
+			if tag in AGENT_TAGS:
+				return "agent"
+			if "building" in tag or "store" in tag or "office" in tag:
+				return "building"
+			return "object"
+
+		linked_entities = []
+		for o in cur_objs:
+			# Expect each o to have: tag(s), image_ft, name? pos?
+			obs_name = getattr(o, "name", None)
+			tags = o.tag 
+			typ = tag_to_type(tags)
+
+			q_ft = getattr(o, "image_ft", None)
+			if q_ft is None:
+				linked_entities.append({
+					"obs_name": obs_name, "obs_type": typ, "status": "ABSTAIN",
+					"linked_name": None, "sim": None, "pos": getattr(o, "get_position", lambda: None)()
+				})
+				continue
+
+			cands = [g for g in gallery if g["typ"] == typ]
+			ranked = rank_by_cosine(q_ft, cands)[:5]
+
+			if not ranked:
+				linked_entities.append({
+					"obs_name": obs_name, "obs_type": typ, "status": "NEW",
+					"linked_name": None, "sim": None, "pos": getattr(o, "get_position", lambda: None)()
+				})
+				continue
+
+			best, sim = ranked[0]
+			hi = TAU_HI.get(typ, 0.75); lo = TAU_LO.get(typ, 0.65)
+
+			if sim >= hi:
+				status, linked_name = "LINKED", best["name"]
+			elif sim >= lo:
+				status, linked_name = "ABSTAIN", None
+			else:
+				status, linked_name = "NEW", None
+
+			linked_entities.append({
+				"obs_name": obs_name,
+				"obs_type": typ,
+				"status": status,             
+				"linked_name": linked_name,
+				"sim": float(sim),
+				"pos": getattr(o, "get_position", lambda: None)()
+			})
+
+		cam_pos = (cam_ext[:3,3].astype(np.float32).tolist() if cam_ext is not None else None)
+		facts = {
+			"place": current_place,
+			"camera_pos": cam_pos,
+			"entities": []
+		}
+		for le in linked_entities:
+			mem = self.s_mem.knowledge.get(le["linked_name"], {}) if le["linked_name"] else {}
+			mem_clean = {k:v for k,v in mem.items() if "_idx" not in k and ".png" not in str(v) and ".json" not in str(v)}
+			facts["entities"].append({
+				"obs_name": le["obs_name"],
+				"type": le["obs_type"],
+				"status": le["status"],
+				"linked_name": le["linked_name"],
+				"sim": le["sim"],
+				"pos": [float(x) for x in le["pos"]] if le["pos"] is not None else None,
+				"mem": mem_clean
+			})
+
+		prompt = f"""
+			You are an intelligent agent that can recognize entities based on visual input and your memory.
+			Given the question and the facts about the observed entities, provide a concise answer based only on the linked entities from your memory.
+			Do not make up any information that is not present in the facts.
+			Question: {text_prompt}\n\n
+			Facts:\n{json.dumps(facts, indent=2)}\n
+			Instructions: 
+			1. Look at the entities from the facts json. Focus on entities with LINKED status, and return their 'linked_name', if it is a recognition task.\n 
+			2. If there are multiple linked entities, pick the entity with the highest 'sim' score.\n
+			3. If any entity is marked as ABSTAIN or new, do not use it to answer the question.\n
+
+			Short answer:
+		"""
+	
+		ans = self.generator.generate(prompt, img=None, json_mode=False).strip()
+		return ans
 
 	def explore(self):
 		motion_list = [
@@ -909,6 +1056,8 @@ class EllaAgent(Agent):
 			response = self.generator.generate(prompt, img=None, json_mode=False)
 			self.logger.debug(f"Commute prompt response: {response}")
 			commute_plan = self.parse_json(prompt, response)
+			# print(commute_plan)
+			# import pdb; pdb.set_trace();
 			assert type(commute_plan) == list
 			for commute in commute_plan:
 				if commute["goal_place"] not in self.s_mem.places:
