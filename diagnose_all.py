@@ -337,16 +337,7 @@ def run():
         batch_renderer=False,
     )
 
-    assets_dir = '/scratch/workspace/tchafekar_umass_edu-tchafekar/Ella/vico/Genesis/genesis/assets/ViCo/avatars/models'
-    exclude_agent_list = []
-    for agent_name in os.listdir(assets_dir):
-        if 'custom' in agent_name.lower():
-            agent_name = agent_name[len('custom_'):]
-            agent_name = agent_name.replace("_", " ").strip()
-            agent_name = agent_name.replace(".glb", "").strip()
-            exclude_agent_list.append(agent_name)
     
-    exclude_ids = []
     agents = []
     agent_cls = get_agent_cls(agent_type=args.agent_type)
     for i in range(args.num_agents):
