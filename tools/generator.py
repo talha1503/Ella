@@ -12,8 +12,6 @@ from typing import Union
 import traceback
 import pickle
 
-from vico.tools.utils import atomic_save
-
 
 def encode_image(img: Union[str, Image.Image]) -> str:
 	if isinstance(img, str): # if it's image path, open and then encode/decode
@@ -70,10 +68,21 @@ class Generator:
 			self.output_token_price = -2 * 10 ** -6
 		if self.lm_source == "openai":
 			from openai import OpenAI
-			self.client = OpenAI(
-				api_key=os.environ['OPENAI_API_KEY'],  # this is also the default, it can be omitted
-				max_retries=self.max_retries,
-			) if 'OPENAI_API_KEY' in os.environ else None
+			try:
+				api_keys = json.load(open(".api_keys.json", "r"))
+				if "embedding" in self.lm_id:
+					api_keys = api_keys["embedding"]
+				else:
+					api_keys = api_keys["all"]
+				api_keys = random.sample(api_keys, 1)[0]
+				self.logger.info(f"Using OpenAI API key: {api_keys['OPENAI_API_KEY']}")
+				self.client = OpenAI(
+					api_key=api_keys['OPENAI_API_KEY'],
+					max_retries=self.max_retries,
+				)
+			except Exception as e:
+				self.logger.error(f"Error loading .api_keys.json: {e} with traceback: {traceback.format_exc()}")
+				self.client = None
 		elif self.lm_source == "azure":
 			from openai import AzureOpenAI
 			try:
@@ -350,14 +359,15 @@ class Generator:
 			embedding = _embed()
 		self.cache[text] = embedding
 		if len(self.cache) % 10 == 0:
+			from vico.tools.utils import atomic_save
 			atomic_save(self.cache_path, pickle.dumps(self.cache))
 		return embedding
 
 
 if __name__ == "__main__":
 	generator = Generator(
-		lm_source='azure',
-		lm_id='o4-mini',
+		lm_source='openai',
+		lm_id='text-embedding-3-small',
 		max_tokens=4096,
 		temperature=0.7,
 		top_p=1.0,
@@ -366,4 +376,6 @@ if __name__ == "__main__":
 	prompt1 = "What is the meaning of life?"
 	prompt2 = "How many images did I sent you?"
 	# print(generator.generate(prompt1))
-	print(generator.generate(prompt2, img=["ViCo/assets/imgs/avatars/Abraham Lincoln.png", "ViCo/assets/imgs/avatars/Albert Einstein.png"]))
+	# print(generator.generate(prompt2, img=["ViCo/assets/imgs/avatars/Abraham Lincoln.png", "ViCo/assets/imgs/avatars/Albert Einstein.png"]))
+	# print(generator.generate(prompt1))
+	print(generator.get_embedding(prompt1))
