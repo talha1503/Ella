@@ -16,6 +16,7 @@ from vico.tools.utils import atomic_save
 @dataclass
 class ObjectBuilderConfig:
     device: str = 'cuda'
+    fov: float = 90.0
     threshold: float = 0.7
     merge_interval: int = 20
     depth_bound: float = 30.0
@@ -45,6 +46,7 @@ class Object:
                     conf: ObjectBuilderConfig, frame_num: int, name: str = None):
         # idx is 0-based, while -1 means background, -100 means Unknown
         self.idx = idx
+        self.fov = conf.fov
         self.voxel_size = conf.building_voxel_size if tag in BUILDING_TAGS else conf.object_voxel_size
         self.volume_grid_builder = VolumeGridBuilder(VolumeGridBuilderConfig(voxel_size=self.voxel_size, depth_bound=conf.depth_bound))
         self.volume_grid_builder.add_points(points, colors, np.ones(points.shape[0], dtype=np.int32))
@@ -74,11 +76,11 @@ class Object:
         pos = (bound[0] + bound[1]) / 2
         return pos.tolist()
     
-    def add_frame(self, rgb: np.ndarray, depth: np.ndarray, fov: float, camera_ext: np.ndarray, mask: np.ndarray, image_ft: np.ndarray, frame_num: int, appearance: np.ndarray):
+    def add_frame(self, rgb: np.ndarray, depth: np.ndarray, camera_ext: np.ndarray, mask: np.ndarray, image_ft: np.ndarray, frame_num: int, appearance: np.ndarray):
         if self.tag in DYNAMIC_OBJECTS: # need to clear the volume grid
             self.volume_grid_builder.clear()
         label = np.where(mask, 0, -100)
-        self.volume_grid_builder.add_frame(rgb, depth, label.astype(np.int32), fov, camera_ext)
+        self.volume_grid_builder.add_frame(rgb, depth, label.astype(np.int32), self.fov, camera_ext)
         if self.image_ft is not None:
             self.image_ft = (self.image_ft * self.detect_num + image_ft) / (self.detect_num + 1)
         self.appearance_list.append(Appearance(appearance, frame_num))
@@ -127,6 +129,7 @@ class ObjectBuilder:
         from .model import RAMWrapper, DINOWrapper, SAMWrapper, CLIPWrapper
         from tools.model_manager import global_model_manager
         self.conf = conf
+        self.fov = conf.fov
         self.debug = conf.debug
         self.output_path = conf.output_path
         os.makedirs(self.output_path, exist_ok=True)
@@ -203,7 +206,7 @@ class ObjectBuilder:
                 return True
         return False
     
-    def add_frame(self, rgb: np.ndarray, depth: np.ndarray, fov: float, camera_ext: np.ndarray):
+    def add_frame(self, rgb: np.ndarray, depth: np.ndarray, camera_ext: np.ndarray):
         self.new_objects.clear()
         self.curr_objects.clear()
 
@@ -255,7 +258,7 @@ class ObjectBuilder:
                     cur_objects.append(None)
                     continue
                 label = np.where(mask, 0, -100)
-                points, colors, _ = VolumeGridBuilder._img_to_pcd(rgb, depth, label, fov, camera_ext)
+                points, colors, _ = VolumeGridBuilder._img_to_pcd(rgb, depth, label, self.fov, camera_ext)
                 obj = Object(0, points, colors, appearance, tag, image_ft, self.conf, self.num_frames)
                 if obj.denoise(self.conf.denoise_param) < 5:
                     areas.append(0)
@@ -299,7 +302,7 @@ class ObjectBuilder:
                 if sim[merge_obj_idx] > self.conf.threshold:
                     self.logger.debug(f"Merge object: {cur_obj} into {objects[merge_obj_idx]}")
 
-                    objects[merge_obj_idx].add_frame(rgb, depth, fov, camera_ext, mask, cur_obj.image_ft, self.num_frames, appearance)
+                    objects[merge_obj_idx].add_frame(rgb, depth, camera_ext, mask, cur_obj.image_ft, self.num_frames, appearance)
                     objects[merge_obj_idx].denoise(self.conf.denoise_param)
                     labels[mask] = objects[merge_obj_idx].idx
                     self.curr_objects.append(objects[merge_obj_idx].idx)
@@ -336,7 +339,7 @@ class ObjectBuilder:
                     del self.objects[obj.idx]
         return labels
 
-    def add_frame_with_gt_seg(self, rgb: np.ndarray, depth: np.ndarray, segmentation: np.ndarray, fov: float, camera_ext: np.ndarray, gt_seg_entity_idx_to_info):
+    def add_frame_with_gt_seg(self, rgb: np.ndarray, depth: np.ndarray, segmentation: np.ndarray, camera_ext: np.ndarray, gt_seg_entity_idx_to_info):
         self.new_objects.clear()
         self.curr_objects.clear()
 
@@ -370,7 +373,7 @@ class ObjectBuilder:
                     cur_objects.append(None)
                     continue
                 label = np.where(mask, 0, -100)
-                points, colors, _ = VolumeGridBuilder._img_to_pcd(rgb, depth, label, fov, camera_ext)
+                points, colors, _ = VolumeGridBuilder._img_to_pcd(rgb, depth, label, self.fov, camera_ext)
                 obj = Object(0, points, colors, appearance, tag, None, self.conf, self.num_frames, name=name)
                 if obj.denoise(self.conf.denoise_param) < 5:
                     areas.append(0)
@@ -404,7 +407,7 @@ class ObjectBuilder:
                 if merge_obj_idx is not None:
                     self.logger.debug(f"Merge object: {cur_obj} into {objects[merge_obj_idx]}")
 
-                    objects[merge_obj_idx].add_frame(rgb, depth, fov, camera_ext, mask, cur_obj.image_ft, self.num_frames, appearance)
+                    objects[merge_obj_idx].add_frame(rgb, depth, camera_ext, mask, cur_obj.image_ft, self.num_frames, appearance)
                     objects[merge_obj_idx].denoise(self.conf.denoise_param)
                     labels[mask] = objects[merge_obj_idx].idx
                     self.curr_objects.append(objects[merge_obj_idx].idx)
@@ -419,7 +422,7 @@ class ObjectBuilder:
         self.num_frames += 1
         return labels
 
-    def add_frame_for_cur_objects(self, rgb: np.ndarray, depth: np.ndarray, fov: float, camera_ext: np.ndarray):
+    def add_frame_for_cur_objects(self, rgb: np.ndarray, depth: np.ndarray, camera_ext: np.ndarray):
         self.new_objects.clear()
         self.curr_objects.clear()
 
@@ -471,7 +474,7 @@ class ObjectBuilder:
                     cur_objects.append(None)
                     continue
                 label = np.where(mask, 0, -100)
-                points, colors, _ = VolumeGridBuilder._img_to_pcd(rgb, depth, label, fov, camera_ext)
+                points, colors, _ = VolumeGridBuilder._img_to_pcd(rgb, depth, label, self.fov, camera_ext)
                 # TODO: denoise points
                 min_bound, max_bound = points.min(axis=0), points.max(axis=0)
                 if self.debug: self.logger.info(f"Detect object: {tag}, {min_bound}, {max_bound}")
@@ -500,7 +503,7 @@ class ObjectBuilder:
                 if sim[merge_obj_idx] > self.conf.threshold:
                     self.logger.debug(f"Merge object: {cur_obj} into {objects[merge_obj_idx]}")
 
-                    objects[merge_obj_idx].add_frame(rgb, depth, fov, camera_ext, mask, cur_obj.image_ft, self.num_frames, appearance)
+                    objects[merge_obj_idx].add_frame(rgb, depth, camera_ext, mask, cur_obj.image_ft, self.num_frames, appearance)
                     objects[merge_obj_idx].denoise(self.conf.denoise_param)
                     labels[mask] = objects[merge_obj_idx].idx
                     self.curr_objects.append(objects[merge_obj_idx].idx)
