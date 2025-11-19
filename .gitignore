@@ -18,7 +18,6 @@ cost-logs
 *.pth
 *.onnx
 *.mp4
-.api_keys*
 api_keys*
 Genesis/**/*.pkl
 *.egg-info*

@@ -9,10 +9,7 @@ import random
 from datetime import datetime, timedelta
 from PIL import Image
 from dataclasses import dataclass
-from .memory import SemanticMemory, EpisodicMemory
-from .sg.builder.object import AGENT_TAGS
-import pdb 
-import pickle 
+from .memory import SemanticMemory, EpisodicMemory 
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from vico.agents import Agent
@@ -308,9 +305,11 @@ class EllaAgent(Agent):
 		return action
 
 	def diagnose(self, text_prompt: str, rgb, depth, extrinsics, **kwargs) -> str:
-		fov = extrinsics.get("fov", 60.0) if isinstance(extrinsics, dict) else 60.0
+		import pickle
+
+		fov = 60.0 
 		cam_ext = extrinsics.get("extrinsics", None) if isinstance(extrinsics, dict) else extrinsics
-		current_place = extrinsics.get("current_place", self.current_place or "open space") if isinstance(extrinsics, dict) else (self.current_place or "open space")
+		current_place = "open space"
 
 		labels, cur_objs = self.s_mem.object_builder.add_frame_for_cur_objects(
 			rgb=rgb, depth=depth, fov=fov, camera_ext=cam_ext
@@ -374,7 +373,6 @@ class EllaAgent(Agent):
 
 		linked_entities = []
 		for o in cur_objs:
-			# Expect each o to have: tag(s), image_ft, name? pos?
 			obs_name = getattr(o, "name", None)
 			tags = o.tag 
 			typ = tag_to_type(tags)
