@@ -9,7 +9,7 @@ import random
 from datetime import datetime, timedelta
 from PIL import Image
 from dataclasses import dataclass
-from .memory import SemanticMemory, EpisodicMemory 
+from .memory import SemanticMemory, EpisodicMemory
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from vico.agents import Agent
@@ -70,7 +70,7 @@ class EllaAgent(Agent):
 			self.last_react_time = lastevent.event_time
 		else:
 			self.last_react_time = None
-	
+
 		chatting_buffer = self.scratch["chatting_buffer"] if "chatting_buffer" in self.scratch else []
 		self.chatting_buffer: list[Chat] = [Chat(datetime.strptime(chat["time"], "%B %d, %Y, %H:%M:%S"), chat["subject"], chat["pos"], chat["content"]) for chat in chatting_buffer]
 		self.react_mode = None
@@ -180,6 +180,7 @@ class EllaAgent(Agent):
 
 		if not self.no_react and (self.last_react_time is None or (self.last_react_time != self.curr_time and (self.curr_time - self.last_react_time).total_seconds() > self.react_freq)):
 			if obs['rgb'] is not None:
+
 				# todo: get the keywords
 				donot_add = False
 
@@ -307,13 +308,11 @@ class EllaAgent(Agent):
 
 	def diagnose(self, text_prompt: str, rgb, depth, extrinsics, **kwargs) -> str:
 		import pickle
-
-		fov = 60.0 
-		cam_ext = extrinsics.get("extrinsics", None) if isinstance(extrinsics, dict) else extrinsics
+		
 		current_place = "open space"
 
 		labels, cur_objs = self.s_mem.object_builder.add_frame_for_cur_objects(
-			rgb=rgb, depth=depth, fov=fov, camera_ext=cam_ext
+			rgb=rgb, depth=depth, fov=self.fov, camera_ext=extrinsics
 		)
 
 		def infer_type(mem: dict):
@@ -415,7 +414,7 @@ class EllaAgent(Agent):
 				"pos": getattr(o, "get_position", lambda: None)()
 			})
 
-		cam_pos = (cam_ext[:3,3].astype(np.float32).tolist() if cam_ext is not None else None)
+		cam_pos = (extrinsics[:3,3].astype(np.float32).tolist() if extrinsics is not None else None)
 		facts = {
 			"place": current_place,
 			"camera_pos": cam_pos,
@@ -441,7 +440,7 @@ class EllaAgent(Agent):
 			Question: {text_prompt}\n\n
 			Facts:\n{json.dumps(facts, indent=2)}\n
 			Instructions: 
-			1. Look at the entities from the facts json. Focus on entities with LINKED status, and return their 'linked_name', if it is a recognition task.\n 
+			1. Look at the entities from the facts JSON. Focus on entities with LINKED status, and return their 'linked_name', if it is a recognition task.\n 
 			2. If there are multiple linked entities, pick the entity with the highest 'sim' score.\n
 			3. If any entity is marked as ABSTAIN or new, do not use it to answer the question.\n
 
