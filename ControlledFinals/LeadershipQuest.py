@@ -257,7 +257,7 @@ if __name__ == '__main__':
 
 	agents = []
 	
-	from agents import get_agent_cls_ella, AgentProcess
+	from agents import get_agent_cls, AgentProcess
 	for i in range(args.num_agents):
 		basic_kwargs = dict(
 			name = env.agent_names[i],
@@ -274,7 +274,7 @@ if __name__ == '__main__':
 			lm_id=args.lm_id,
 		)
 
-		agent_cls = get_agent_cls_ella(agent_type=args.agent_type)
+		agent_cls = get_agent_cls(agent_type=args.agent_type)
 		agents.append(AgentProcess(agent_cls, **basic_kwargs, **llm_kwargs))
 
 

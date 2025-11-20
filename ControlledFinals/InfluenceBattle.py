@@ -144,6 +144,7 @@ if __name__ == '__main__':
 		num_agents=args.num_agents,
 		config_path=config_path,
 		scene=args.scene,
+		no_load_scene=args.no_load_scene,
 		enable_indoor_scene=not args.no_load_indoor_scene,
 		enable_indoor_objects=not args.no_load_indoor_objects,
 		enable_outdoor_objects=not args.no_load_outdoor_objects,
@@ -152,7 +153,6 @@ if __name__ == '__main__':
 		enable_decompose=args.enable_decompose,
 		skip_avatar_animation=args.skip_avatar_animation,
 		enable_gt_segmentation=args.enable_gt_segmentation,
-		no_load_scene=args.no_load_scene,
 		output_dir=args.output_dir,
 		enable_third_person_cameras=args.enable_third_person_cameras,
 		enable_demo_camera=args.enable_demo_camera,
@@ -168,7 +168,7 @@ if __name__ == '__main__':
 
 	agents = []
 	
-	from agents import get_agent_cls_ella, AgentProcess
+	from agents import get_agent_cls, AgentProcess
 	for i in range(args.num_agents):
 		basic_kwargs = dict(
 			name = env.agent_names[i],
@@ -184,7 +184,7 @@ if __name__ == '__main__':
 			lm_source=args.lm_source,
 			lm_id=args.lm_id
 		)
-		agent_cls = get_agent_cls_ella(agent_type=args.agent_type)
+		agent_cls = get_agent_cls(agent_type=args.agent_type)
 		agents.append(AgentProcess(agent_cls, **basic_kwargs, **llm_kwargs))
 
 	if args.multi_process:

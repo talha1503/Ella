@@ -26,7 +26,7 @@ class GenAgent(Agent):
 		self.curr_event = self.scratch["act_event"]
 		self.last_actions = [None] * 5 # maintain 5 last actions
 		self.enable_gt_segmentation = enable_gt_segmentation
-		self.s_mem = SemanticMemory(os.path.join(self.storage_path, "semantic_memory"), detect_interval=-1 if self.enable_gt_segmentation else 2, debug=self.debug, logger=self.logger)
+		self.s_mem = SemanticMemory(os.path.join(self.storage_path, "semantic_memory"), detect_interval=-1 if self.enable_gt_segmentation else 2, fov=self.fov, debug=self.debug, logger=self.logger)
 		self.e_mem = EpisodicMemory(os.path.join(self.storage_path, "episodic_memory"), lm_source, debug=self.debug, logger=self.logger)
 		lastevent = self.e_mem.get_memory(-1)
 		if lastevent is not None:
@@ -69,7 +69,7 @@ class GenAgent(Agent):
 			curr_goal_dict = self.s_mem.get_knowledge(self.scratch["act_address"])
 			self.curr_goal_pos = np.array([curr_goal_dict["location"][0], curr_goal_dict["location"][1]])
 			self.curr_goal_bbox = np.array(curr_goal_dict["bounding_box"])
-		self.s_mem = SemanticMemory(os.path.join(self.storage_path, "semantic_memory"), detect_interval=-1 if self.enable_gt_segmentation else 2, debug=self.debug, logger=self.logger)
+		self.s_mem = SemanticMemory(os.path.join(self.storage_path, "semantic_memory"), detect_interval=-1 if self.enable_gt_segmentation else 2, fov=self.fov, debug=self.debug, logger=self.logger)
 		self.e_mem = EpisodicMemory(os.path.join(self.storage_path, "episodic_memory"), self.lm_source, debug=self.debug, logger=self.logger)
 
 	def _process_obs(self, obs): # override

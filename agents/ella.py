@@ -36,6 +36,7 @@ class EllaAgent(Agent):
 		super().__init__(name, pose, info, sim_path, no_react, debug, logger)
 		from tools.model_manager import global_model_manager
 		self.lm_source = lm_source
+		self.detect_interval = detect_interval
 		self.generator = global_model_manager.get_generator(lm_source, lm_id, max_tokens, temperature, top_p, logger)
 		# self.embedding_generator = Generator(lm_source, 'embedding', max_tokens, temperature, top_p, logger)
 		self.react_freq = self.scratch["react_freq"] if "react_freq" in self.scratch else 1e8
@@ -62,7 +63,7 @@ class EllaAgent(Agent):
 		else:
 			self.last_enter_bus_time = None
 
-		self.s_mem = SemanticMemory(os.path.join(self.storage_path, "semantic_memory"), detect_interval=detect_interval, region_layer=region_layer, debug=self.debug, logger=self.logger) #todo: log the num_frames
+		self.s_mem = SemanticMemory(os.path.join(self.storage_path, "semantic_memory"), detect_interval=detect_interval, fov=self.fov, region_layer=region_layer, debug=self.debug, logger=self.logger) #todo: log the num_frames
 		self.e_mem = EpisodicMemory(os.path.join(self.storage_path, "episodic_memory"), lm_source, debug=self.debug, logger=self.logger)
 		lastevent = self.e_mem.get_memory(-1)
 		if lastevent is not None:
@@ -84,7 +85,7 @@ class EllaAgent(Agent):
 		self.commute_plan = None
 		self.commute_plan_idx = 0
 		
-		self.s_mem = SemanticMemory(os.path.join(self.storage_path, "semantic_memory"), debug=self.debug, logger=self.logger)
+		self.s_mem = SemanticMemory(os.path.join(self.storage_path, "semantic_memory"), detect_interval=self.detect_interval, fov=self.fov, debug=self.debug, logger=self.logger)
 		self.e_mem = EpisodicMemory(os.path.join(self.storage_path, "episodic_memory"), self.lm_source, debug=self.debug, logger=self.logger)
 
 	def set_curr_time(self, curr_time: datetime):
@@ -1159,7 +1160,7 @@ class EllaAgent(Agent):
 			if len(error_messages) > 0:
 				error_messages_verbalize = f"There are error messages for {self.name}'s schedule: \n" + '\n'.join(error_messages) + '\n'
 				raise Exception(error_messages_verbalize)
-			self.logger.info(f"Hourly schedule generation for {self.name} is success!")
+			self.logger.info(f"Hourly schedule generation for {self.name} succeeded!")
 			self.logger.debug(f"Hourly schedule: {hourly_schedule}")
 		except Exception as e:
 			self.logger.error(f"Error generating daily plan: {e} with traceback: {traceback.format_exc()}. Using default instead.The response was {response}")

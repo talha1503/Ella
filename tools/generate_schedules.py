@@ -34,6 +34,7 @@ parser.add_argument("--output_dir", type=str)
 parser.add_argument("--debug", action='store_true')
 parser.add_argument("--overwrite", action='store_true')
 parser.add_argument("--curr_time", type=str)
+parser.add_argument("--lm_source", type=str, default='openai')
 args = parser.parse_args()
 
 if not args.output_dir:
@@ -59,7 +60,7 @@ config = json.load(open(config_path, "r"))
 global_model_manager.init(local=True)
 for i in range(args.num_agents):
 	agent = EllaAgent(name=config["agent_names"][i], pose=config["agent_poses"][i], info=config["agent_infos"][i],
-					  sim_path=args.output_dir, no_react=True, debug=True, logger=logger, lm_source='azure', lm_id='gpt-4o', detect_interval=-1)
+					  sim_path=args.output_dir, no_react=True, debug=True, logger=logger, lm_source=args.lm_source, lm_id='gpt-4o', detect_interval=-1)
 	hourly_schedule_path = os.path.join(agent.storage_path, "hourly_schedule.json")
 	if os.path.exists(hourly_schedule_path):
 		print(f"Skip generating schedule for {agent.name}")

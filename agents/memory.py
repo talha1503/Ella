@@ -20,9 +20,10 @@ from tools.model_manager import global_model_manager
 from vico.tools.utils import atomic_save, json_converter, min_max_normalize_dict, top_highest_x_values
 
 class SemanticMemory:
-	def __init__(self, storage_path, detect_interval=-1, region_layer=False, debug=False, logger=None):
+	def __init__(self, storage_path, detect_interval=-1, fov=90.0, region_layer=False, debug=False, logger=None):
 		self.storage_path = storage_path
 		self.detect_interval = detect_interval
+		self.fov = fov
 		self.debug = debug
 		self.logger = logger
 		self.knowledge_path = os.path.join(storage_path, "knowledge.json")
@@ -45,7 +46,7 @@ class SemanticMemory:
 		if self.detect_interval != -1:
 			from .sg.builder.object import ObjectBuilder, ObjectBuilderConfig, AGENT_TAGS, VEHICLE_TAGS
 			self.object_builder = ObjectBuilder(ObjectBuilderConfig(
-				debug=self.debug, output_path=os.path.join(storage_path, "object"), logger=self.logger))
+				fov=self.fov, debug=self.debug, output_path=os.path.join(storage_path, "object"), logger=self.logger))
 			if region_layer:
 				from .sg.builder.region import RegionBuilder
 				self.region_builder = RegionBuilder(vg_builder=self.get_sg(self.current_place).volume_grid_builder,
@@ -67,7 +68,7 @@ class SemanticMemory:
 
 			self.scene_graph_dict[place] = Builder(
 				BuilderConfig(output_path=output_path,
-							  volume_grid_conf=volume_grid_conf, debug=self.debug, logger=self.logger))
+							  volume_grid_conf=volume_grid_conf, fov=self.fov, debug=self.debug, logger=self.logger))
 			if os.path.exists(f"{self.storage_path}/{place}/volume_grid.pkl"):
 				print(f"Loading volume grid for {place}...")
 				self.scene_graph_dict[place].volume_grid_builder.load(f"{self.storage_path}/{place}/volume_grid.pkl")
@@ -188,11 +189,11 @@ class SemanticMemory:
 			return 0
 		cur_sg = self.get_sg(obs['current_place'])
 		if self.object_builder is not None and "gt_seg_entity_idx_to_info" in obs:
-			labels = self.object_builder.add_frame_with_gt_seg(obs['rgb'], obs['depth'], obs['segmentation'], obs['fov'], obs['extrinsics'], obs['gt_seg_entity_idx_to_info'])
+			labels = self.object_builder.add_frame_with_gt_seg(obs['rgb'], obs['depth'], obs['segmentation'], obs['extrinsics'], obs['gt_seg_entity_idx_to_info'])
 			num_new_objects = len(self.object_builder.new_objects)
 		elif self.detect_interval > 0 and self.num_frames % self.detect_interval == 0 and (self.last_processed_rgb is None or not np.allclose(obs['rgb'], self.last_processed_rgb)):
 			self.last_processed_rgb = obs['rgb']
-			labels = self.object_builder.add_frame(obs['rgb'], obs['depth'], obs['fov'], obs['extrinsics'])
+			labels = self.object_builder.add_frame(obs['rgb'], obs['depth'], obs['extrinsics'])
 			if self.debug:
 				label_color = np.random.rand(max(0, int(labels.max())) + 101, 3)
 				label_color[0] = 0
@@ -203,7 +204,7 @@ class SemanticMemory:
 		else:
 			labels = -np.ones_like(obs['depth'], dtype=np.int32)
 			num_new_objects = 0
-		cur_sg.add_frame(obs['rgb'], obs['depth'], labels, obs['fov'], obs['extrinsics'])
+		cur_sg.add_frame(obs['rgb'], obs['depth'], labels, obs['extrinsics'])
 		self.num_frames += 1
 		if num_new_objects > 0:
 			# update region cluster
@@ -272,7 +273,7 @@ class SemanticMemory:
 		labels = None
 		if self.detect_interval > 0:
 			self.last_processed_rgb = obs['rgb']
-			labels, cur_objects = self.object_builder.add_frame_for_cur_objects(obs['rgb'], obs['depth'], obs['fov'], obs['extrinsics'])
+			labels, cur_objects = self.object_builder.add_frame_for_cur_objects(obs['rgb'], obs['depth'], obs['extrinsics'])
 			for obj in cur_objects:
 				matched_name = None
 				if obj.tag in AGENT_TAGS:
@@ -301,7 +302,7 @@ class SemanticMemory:
 					"position": obj.get_position()
 				}
 				cur_objects_info.append(obj_info)
-		cur_sg.add_frame(obs['rgb'], obs['depth'], labels, obs['fov'], obs['extrinsics'])
+		cur_sg.add_frame(obs['rgb'], obs['depth'], labels, obs['extrinsics'])
 		self.num_frames += 1
 		self.save_memory()
 		return cur_objects_info
