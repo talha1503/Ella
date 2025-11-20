@@ -1054,8 +1054,6 @@ class EllaAgent(Agent):
 			response = self.generator.generate(prompt, img=None, json_mode=False)
 			self.logger.debug(f"Commute prompt response: {response}")
 			commute_plan = self.parse_json(prompt, response)
-			# print(commute_plan)
-			# import pdb; pdb.set_trace();
 			assert type(commute_plan) == list
 			for commute in commute_plan:
 				if commute["goal_place"] not in self.s_mem.places:
