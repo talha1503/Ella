@@ -83,7 +83,6 @@ def dump_pair_debug(env, a_idx, b_idx, a_obs, tag="", anchor_index=0, outdir=Non
 
     rgb = a_obs['rgb']
     depth = a_obs['depth']
-    fov = a_obs.get('fov', None)
     extr = a_obs.get('extrinsics', None)
     cur_place = a_obs.get('current_place', None)
 
@@ -115,7 +114,6 @@ def dump_pair_debug(env, a_idx, b_idx, a_obs, tag="", anchor_index=0, outdir=Non
         "distance_xy_m": dist,
         "bearing_deg": bearing_deg,
         "delta_yaw_deg": delta_deg,
-        "fov": fov,
         "current_place": cur_place,
         "extrinsics": extr,
         "anchor_index": anchor_index
@@ -363,7 +361,6 @@ def run():
                 a_obs = env.obs[a_idx]
                 rgb = a_obs['rgb']
                 depth = a_obs['depth']
-                fov = a_obs['fov']
                 extr = a_obs['extrinsics']
 
                 env.perform_action(a_idx, {"type":"wake"})
